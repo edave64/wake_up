@@ -14,20 +14,27 @@ void setup() {
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
+void printNumPad2(uint8_t num) {
+  if (num < 10) {
+    Serial.print('0');
+  }
+  Serial.print(num, DEC);
+}
+
+void processInput(char* input)
+
 void loop() {
   DateTime now = rtc.now();
-  Serial.print("Date & Time: ");
   Serial.print(now.year(), DEC);
-  Serial.print('/');
-  Serial.print(now.month(), DEC);
-  Serial.print('/');
-  Serial.print(now.day(), DEC);
-  Serial.print(" (");
-  Serial.print(now.dayOfTheWeek());
-  Serial.print(") ");
-  Serial.print(now.hour(), DEC);
+  Serial.print('-');
+  printNumPad2(now.month());
+  Serial.print('-');
+  printNumPad2(now.day());
+  Serial.print(" ");
+  printNumPad2(now.hour());
   Serial.print(':');
-  Serial.print(now.minute(), DEC);
+  printNumPad2(now.minute());
   Serial.print(':');
-  Serial.println(now.second(), DEC);
+  printNumPad2(now.second());
+  Serial.println();
 }
