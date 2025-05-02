@@ -21,28 +21,33 @@ void printNumPad2(uint8_t num) {
   Serial.print(num, DEC);
 }
 
-void processInput(String input) {
-  if (input.startsWith('g')) { // get time
-    DateTime now = rtc.now();
-    Serial.print(now.year(), DEC);
+void printDateTime(DateTime dt) {
+    Serial.print(dt.year(), DEC);
     Serial.print('-');
-    printNumPad2(now.month());
+    printNumPad2(dt.month());
     Serial.print('-');
-    printNumPad2(now.day());
+    printNumPad2(dt.day());
     Serial.print(' ');
-    printNumPad2(now.hour());
+    printNumPad2(dt.hour());
     Serial.print(':');
-    printNumPad2(now.minute());
+    printNumPad2(dt.minute());
     Serial.print(':');
-    printNumPad2(now.second());
+    printNumPad2(dt.second());
     Serial.println();
-  } else if (input.startsWith('s')) {
-    String hour = input.substr(1, 2);
-    String min = input.substr(4, 2);
-    String sec = input.substr(7, 2);
+}
+
+void processInput(String input) {
+  if (input.startsWith("g")) { // get time
+    DateTime now = rtc.now();
+    printDateTime(now);
+  } else if (input.startsWith("s")) {
+    String hour = input.substring(1, 3);
+    String min = input.substring(4, 6);
+    String sec = input.substring(7, 9);
 
     DateTime now = rtc.now();
-    hour.toInt();
+    DateTime newTime(now.year(), now.month(), now.day(), hour.toInt(), min.toInt(), sec.toInt());
+    rtc.adjust(newTime);
   }
 }
 
