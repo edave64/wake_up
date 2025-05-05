@@ -7,6 +7,8 @@ CRGB leds[NUM_LEDS];
 
 RTC_DS3231 rtc;
 
+DateTime initTime;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
@@ -16,6 +18,9 @@ void setup() {
     Serial.println("Couldn't find RTC");
     while (1);
   }
+  Serial.println("Start");
+
+  initTime = rtc.now();
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
@@ -57,21 +62,25 @@ void processInput(String input) {
 }
 
 int i = 0;
+int8_t cycle = 0;
 
 void loop() {
   if (Serial.available()) {
     String line = Serial.readStringUntil("\n");
     processInput(line);
   }
-  leds[i] = CRGB::White;
-  if (i < NUM_LEDS - 1) {
-    ++i;
-  } else {
-    for (i = 0; i < NUM_LEDS; ++i) {
-      leds[i] = CRGB::Black;
-    }
-    i = 0;
+
+  int32_t secs = ((rtc.now() - initTime).totalseconds());
+
+  int32_t color = (secs > 100 ? 100 : secs);
+  int8_t offset = (color / 4);
+  if (offset <= 0) offset = 1;
+  for (i = 0; i < NUM_LEDS; i += 1) {
+    int32_t col = (color + (((cycle + i) % 3) - 1) * offset);
+    leds[i] = col < 0 ? 0 : col << 16;
   }
+  cycle++;
+  Serial.println(secs);
   FastLED.show();
-  delay(100);
+  delay(200);
 }
