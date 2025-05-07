@@ -18,9 +18,11 @@ void setup() {
     Serial.println("Couldn't find RTC");
     while (1);
   }
+  for (int i = 0; i < NUM_LEDS; ++i) {
+    leds[i] = 0;
+  }
+  FastLED.show();
   Serial.println("Start");
-
-  initTime = rtc.now();
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
@@ -61,26 +63,47 @@ void processInput(String input) {
   }
 }
 
-int i = 0;
-int8_t cycle = 0;
-
 void loop() {
   if (Serial.available()) {
     String line = Serial.readStringUntil("\n");
     processInput(line);
   }
 
-  int32_t secs = ((rtc.now() - initTime).totalseconds());
+  DateTime now = rtc.now();
 
-  int32_t color = (secs > 100 ? 100 : secs);
-  int8_t offset = (color / 4);
-  if (offset <= 0) offset = 1;
-  for (i = 0; i < NUM_LEDS; i += 1) {
-    int32_t col = (color + (((cycle + i) % 3) - 1) * offset);
-    leds[i] = col < 0 ? 0 : col << 16;
+  bool wakingMode = false;
+
+  if ((now.dayOfTheWeek() == 0 || now.dayOfTheWeek() == 6)) {
+    wakingMode = now.hour() == 8;
+  } else {
+    wakingMode = now.hour() == 6;
   }
-  cycle++;
-  Serial.println(secs);
-  FastLED.show();
-  delay(200);
+
+  if (wakingMode && now.minute() >= 45) {
+    int32_t secs = (now.minute() - 45) * 60 + now.second();
+
+    float fraction = secs / (15.0 * 60.0);
+    
+    int8_t color = 255 * fraction;
+
+    if (color == 0) {
+      color = 1;
+    }
+
+    for (int i = 0; i < NUM_LEDS; ++i) {
+      leds[i] = color;
+    }
+
+    FastLED.show();
+    delay(200);
+  } else {
+    for (int i = 0; i < NUM_LEDS; ++i) {
+      if (leds[i] > 0) {
+        --leds[i];
+      }
+    }
+    FastLED.show();
+    delay(30000);
+  }
+
 }
