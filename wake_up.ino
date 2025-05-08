@@ -72,23 +72,6 @@ void connectToWiFi(){
   printWifiStatus();
 }
 
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
-  
-  if (!RTC.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
-  }
-  for (int i = 0; i < NUM_LEDS; ++i) {
-    leds[i] = 0;
-  }
-  FastLED.show();
-  Serial.println("Start");
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-}
-
 void printNumPad2(uint8_t num) {
   if (num < 10) {
     Serial.print('0');
@@ -157,6 +140,24 @@ void processInput(String input) {
   }
 }
 
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
+  
+  if (!RTC.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+  for (int i = 0; i < NUM_LEDS; ++i) {
+    leds[i] = 0;
+  }
+  FastLED.show();
+  Serial.println("Start");
+  ntp();
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+}
+
 void loop() {
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');
@@ -188,7 +189,7 @@ void loop() {
     }
 
     for (int i = 0; i < NUM_LEDS; ++i) {
-      leds[i] = color;
+      leds[i] = (uint32_t)color;
     }
 
     FastLED.show();
@@ -196,7 +197,7 @@ void loop() {
   } else {
     for (int i = 0; i < NUM_LEDS; ++i) {
       if (leds[i] > 0) {
-        --leds[i];
+        leds[i] = (leds[i].as_uint32_t()) - 1;
       }
     }
     FastLED.show();
