@@ -17,6 +17,9 @@
 #define DATA_PIN 6
 CRGB leds[NUM_LEDS];
 
+int WakeUpSeconds = 15 * 60;
+int FadeOutTimeout = 1000;
+
 RTCTime initTime;
 bool fastMode = false;
 
@@ -24,8 +27,15 @@ char ssid[] = SECRET_SSID; // your network SSID (name)
 char pass[] = SECRET_PASS; // your network password (use for WPA, or use as key for WEP)
 
 int wifiStatus = WL_IDLE_STATUS;
-WiFiUDP Udp; // A UDP instance to let us send and receive packets over UDP
-NTPClient timeClient(Udp);
+
+enum State {
+  Waiting,
+  FadeIn,
+  FadeOut,
+  FastSerial
+}
+
+currentState = State::Waiting;
 
 void printWifiStatus() {
   // print the SSID of the network you're attached to:
@@ -97,52 +107,37 @@ void printDateTime(RTCTime dt) {
 void ntp() {
   connectToWiFi();
   Serial.println("\nStarting connection to server...");
-  timeClient.begin();
-  timeClient.update();
 
-  // Get the current date and time from an NTP server and convert
-  // it to UTC +2 by passing the time zone offset in hours.
-  // You may change the time zone offset to your local one.
-  auto timeZoneOffsetHours = 2;
-  auto unixTime = timeClient.getEpochTime() + (timeZoneOffsetHours * 3600);
-  Serial.print("Unix time = ");
-  Serial.println(unixTime);
-  RTCTime timeToSet = RTCTime(unixTime);
-  RTC.setTime(timeToSet);
+  {
+    WiFiUDP Udp; // A UDP instance to let us send and receive packets over UDP
+    NTPClient timeClient(Udp);
+    timeClient.begin();
+    timeClient.update();
 
-  // Retrieve the date and time from the RTC and print them
-  RTCTime currentTime;
-  RTC.getTime(currentTime); 
-  Serial.println("The RTC was just set to: " + String(currentTime));
-}
+    // Get the current date and time from an NTP server and convert
+    // it to UTC +2 by passing the time zone offset in hours.
+    // You may change the time zone offset to your local one.
+    auto timeZoneOffsetHours = 2;
+    auto unixTime = timeClient.getEpochTime() + (timeZoneOffsetHours * 3600);
+    Serial.print("Unix time = ");
+    Serial.println(unixTime);
+    RTCTime timeToSet = RTCTime(unixTime);
+    RTC.setTime(timeToSet);
 
-void processInput(String input) {
-  if (input.startsWith("g")) { // get time
-    RTCTime now;
-    RTC.getTime(now);
-    //DateTime now = rtc.now();
-    printDateTime(now);
-  } else if (input.startsWith("s")) {
-    String hour = input.substring(1, 3);
-    String min = input.substring(4, 6);
-    String sec = input.substring(7, 9);
-
-    RTCTime now;
-    RTC.getTime(now);
-    now.setHour(hour.toInt());
-    now.setMinute(min.toInt());
-    now.setSecond(sec.toInt());
-    RTC.setTime(now);
-  } else if (input.startsWith("f")) {
-    fastMode = !fastMode;
-  } else if (input.startsWith("n")) {
-    ntp();
+    // Retrieve the date and time from the RTC and print them
+    RTCTime currentTime;
+    RTC.getTime(currentTime); 
+    Serial.println("The RTC was just set to: " + String(currentTime));
   }
+
+  WiFi.end();
+  wifiStatus = WiFi.status();
 }
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
+  Serial.println("setup");
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
   
   if (!RTC.begin()) {
@@ -158,51 +153,140 @@ void setup() {
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 }
 
+RTCTime startTime;
+
+void serialEvent() {
+  Serial.println("serialEvent");
+  State newState = currentState;
+  switch (Serial.read()) {
+    case 'g': {
+      RTCTime now;
+      RTC.getTime(now);
+      printDateTime(now);
+      return;
+    }
+    case 's': {
+      String input = Serial.readStringUntil('\n');
+      String hour = input.substring(1, 3);
+      String min = input.substring(4, 6);
+      String sec = input.substring(7, 9);
+
+      RTCTime now;
+      RTC.getTime(now);
+      now.setHour(hour.toInt());
+      now.setMinute(min.toInt());
+      now.setSecond(sec.toInt());
+      RTC.setTime(now);
+      return;
+    }
+    case 'n':
+      ntp();
+      return;
+    case 'f':
+      fastMode = !fastMode;
+      break;
+    case 'w':
+      newState = State::FastSerial;
+      break;
+    case 'i':
+      newState = State::FadeIn;
+      break;
+    case 'o':
+      currentState = State::FadeOut;
+      // Don't reset LEDs
+      return;
+  }
+  if (newState != currentState) {
+    currentState = newState;
+    RTC.getTime(startTime);
+    for (int i = 0; i < NUM_LEDS; ++i) {
+      leds[i] = 0;
+    }
+  }
+}
+
 void loop() {
   if (Serial.available()) {
-    String line = Serial.readStringUntil('\n');
-    processInput(line);
+    serialEvent();
+    return;
   }
 
   RTCTime now;
   RTC.getTime(now);
 
-  bool wakingMode = false;
+  switch (currentState) {
+    case State::FastSerial:
+      return;
+    case State::Waiting: {
+      bool wakingMode = false;
 
-  if ((now.getDayOfWeek() == DayOfWeek::SUNDAY || now.getDayOfWeek() == DayOfWeek::SATURDAY)) {
-    wakingMode = now.getHour() == 8;
-  } else {
-    wakingMode = now.getHour() == 6;
-  }
+      RTCTime futureTime(now.getUnixTime() + WakeUpSeconds);
 
-  printDateTime(now);
+      if ((futureTime.getDayOfWeek() == DayOfWeek::SUNDAY || futureTime.getDayOfWeek() == DayOfWeek::SATURDAY)) {
+        wakingMode = futureTime.getHour() == 9 && futureTime.getMinutes() < 10;
+      } else {
+        wakingMode = futureTime.getHour() == 7 && futureTime.getMinutes() < 10;
+      }
 
-  if (wakingMode && now.getMinutes() >= 45) {
-    int32_t secs = (now.getMinutes() - 45) * 60 + now.getSeconds();
+      if (wakingMode) {
+        currentState = State::FadeIn;
+        startTime = now;
+        return;
+      }
 
-    float fraction = secs / (15.0 * 60.0);
-    
-    int8_t color = 255 * fraction;
-
-    if (color == 0) {
-      color = 1;
+      if (!fastMode) {
+        delay(30000);
+      }
+      return;
     }
+    case State::FadeIn: {
+      time_t secs = now.getUnixTime() - startTime.getUnixTime();
 
-    for (int i = 0; i < NUM_LEDS; ++i) {
-      leds[i] = (uint32_t)color;
+      if (secs >= WakeUpSeconds) {
+        currentState = State::FadeOut;
+        startTime = now;
+        return;
+      }
+
+      double fraction = secs / (double)(WakeUpSeconds);
+      fraction = fraction * fraction;
+      
+      uint8_t shade = 255 * fraction;
+
+      if (shade == 0) {
+        shade = 1;
+      }
+
+      CRGB color (0,0,shade);
+      for (int i = 0; i < NUM_LEDS; ++i) {
+        leds[i] = color;
+      }
+
+      FastLED.show();
+      delay(500);
+      return;
     }
+    case State::FadeOut: {
+      CRGB color = leds[0];
+      if (color.red > 0) { color.red--; }
+      if (color.blue > 0) { color.blue--; }
+      if (color.green > 0) { color.green--; }
 
-    FastLED.show();
-    delay(200);
-  } else {
-    for (int i = 0; i < NUM_LEDS; ++i) {
-      if (leds[i] > 0) {
-        leds[i] = (leds[i].as_uint32_t()) - 1;
+      for (int i = 0; i < NUM_LEDS; ++i) {
+        leds[i] = color;
+      }
+      FastLED.show();
+
+      if (color.red == 0 && color.blue == 0 && color.blue == 0) {
+        currentState = State::Waiting;
+      } else {
+        delay(FadeOutTimeout);
       }
     }
-    FastLED.show();
-    if (!fastMode) {
-      delay(30000);
-    }
   }
+}
+
+uint8_t min(uint8_t a, uint8_t b) {
+  if (a > b) return b;
+  return a;
 }
